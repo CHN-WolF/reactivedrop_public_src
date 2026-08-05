@@ -30,7 +30,10 @@ public:
 	void ScriptSetVisibleForMarine( HSCRIPT hMarine, bool bVisible );
 	bool ScriptIsVisibleForMarine( HSCRIPT hMarine, bool bConsiderPositionalFade );
 
-	CNetworkVector( m_vecFadeOrigin );
+	// Keep a non-networked keyfield for parsing the full vector from map/keyvalue,
+	// but only network the Z component which is all we use for fading.
+	Vector m_vecFadeOriginKey; // used for map key parsing only
+	CNetworkVar( float, m_flFadeOriginZ );
 
 	CNetworkVar( byte, m_nFadeOpacity );
 	CNetworkVar( bool, m_bAllowFade );
