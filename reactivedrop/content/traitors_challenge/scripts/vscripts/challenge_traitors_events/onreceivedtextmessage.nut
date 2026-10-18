@@ -1,5 +1,73 @@
 g_bool_BombActivited <- false;
 
+// This scripted user function is the bindable replacement for the legacy chat menu trigger.
+// This script is included by challenge_traitors.nut in the challenge thinker
+// scope, so the listener is only visible to this challenge's listener scope.
+function UserConsoleCommand(player, value) {
+	if (player == null || !player.IsValid() || !g_bool_ClhallengeEnable || !g_bool_Initialized) {
+		return;
+	}
+
+	// This command intentionally runs before the role/Marine checks below.
+	// The guide belongs to the player, not to a marine, so it remains available
+	// to spectators, dead players, and players who joined without a Marine.
+	if (value == "custom_function_2") {
+		ToggleGameplayGuide(player);
+		return;
+	}
+
+	if (value != "custom_function_1" || g_bool_IafWin || g_bool_TraitorWin) {
+		return;
+	}
+
+	if (g_marine_Silencer != null && g_marine_Silencer.IsValid() && player == g_marine_Silencer.GetCommander() && player.GetMarine() == g_marine_Silencer) {
+		ToggleVGuiMenu(player, g_marine_Silencer);
+	} else if (g_marine_Boomer != null && g_marine_Boomer.IsValid() && player == g_marine_Boomer.GetCommander() && player.GetMarine() == g_marine_Boomer) {
+		SetBomb();
+	} else if (g_marine_Infector != null && g_marine_Infector.IsValid() && player == g_marine_Infector.GetCommander() && player.GetMarine() == g_marine_Infector) {
+		ToggleVGuiMenu(player, g_marine_Infector);
+	} else if (g_marine_Scanner != null && g_marine_Scanner.IsValid() && player == g_marine_Scanner.GetCommander() && player.GetMarine() == g_marine_Scanner) {
+		ToggleVGuiMenu(player, g_marine_Scanner);
+	} else if (g_marine_Biochemist != null && g_marine_Biochemist.IsValid() && player == g_marine_Biochemist.GetCommander() && player.GetMarine() == g_marine_Biochemist) {
+		ToggleVGuiMenu(player, g_marine_Biochemist);
+	} else if (g_marine_Shield != null && g_marine_Shield.IsValid() && player == g_marine_Shield.GetCommander() && player.GetMarine() == g_marine_Shield) {
+		ToggleVGuiMenu(player, g_marine_Shield);
+	}
+}
+
+function ToggleGameplayGuide(hPlayer) {
+	if (hPlayer == null || !hPlayer.IsValid() || !g_bool_ClhallengeEnable || !g_bool_Initialized) {
+		return;
+	}
+	local hGuide = GetGameplayGuideEntity(hPlayer);
+	if (g_bool_IafWin || g_bool_TraitorWin) {
+		if (hGuide != null && hGuide.IsValid()) {
+			hGuide.SetInt(0, 0);
+		}
+		return;
+	}
+	if (hGuide == null || !hGuide.IsValid()) {
+		// Do not create an entity from a key press.  The challenge start and
+		// fully-joined paths own creation; this keeps the command inert until the
+		// challenge has completed initialization.
+		return;
+	}
+	if (hGuide.GetInt(0) != 0) {
+		hGuide.SetInt(0, 0);
+	} else {
+		// Reset the local page whenever opening.  The client also watches this
+		// replicated state and returns to MAIN after a close/reopen transition.
+		hPlayer.ValidateScriptScope();
+		local playerScope = hPlayer.GetScriptScope();
+		if (!(g_str_GameplayGuideGenerationField in playerScope)) {
+			playerScope[g_str_GameplayGuideGenerationField] <- 0;
+		}
+		playerScope[g_str_GameplayGuideGenerationField]++;
+		hGuide.SetInt(1, playerScope[g_str_GameplayGuideGenerationField]);
+		hGuide.SetInt(0, 1);
+	}
+}
+
 function OnReceivedTextMessage(recipient, sender, message) {
 	// 这个函数会在服务端为所有玩家执行一次，因此需要通过这个判断避免重复执行
 	if (sender != recipient) {
@@ -13,7 +81,7 @@ function OnReceivedTextMessage(recipient, sender, message) {
 		if (g_marine_Silencer != null && g_marine_Silencer.IsValid() && sender == g_marine_Silencer.GetCommander() && sender.GetMarine() == g_marine_Silencer) {
 			ToggleVGuiMenu(sender, g_marine_Silencer);
 		} else if (g_marine_Boomer != null && g_marine_Boomer.IsValid() && sender == g_marine_Boomer.GetCommander() && sender.GetMarine() == g_marine_Boomer) {
-			SetBomb();
+			SetBomb(sender);
 		} else if (g_marine_Infector != null && g_marine_Infector.IsValid() && sender == g_marine_Infector.GetCommander() && sender.GetMarine() == g_marine_Infector) {
 			ToggleVGuiMenu(sender, g_marine_Infector);
 		} else if (g_marine_Scanner != null && g_marine_Scanner.IsValid() && sender == g_marine_Scanner.GetCommander() && sender.GetMarine() == g_marine_Scanner) {
@@ -96,7 +164,7 @@ function ToggleVGuiMenu(hSender, hMarine) {
 	}
 }
 
-function SetBomb() {
+function SetBomb(hSender = null) {
 	if (g_bool_BombActivited || g_marine_Boomer == null || !g_marine_Boomer.IsValid()) {
 		return;
 	}
@@ -109,7 +177,9 @@ function SetBomb() {
 		g_marine_Boomer.EmitSound(BOOMER_SOUND.COUNT_DOWN[delay]);
 		DelayFunctionCall("BoomerSelfExplode", "", 5.0); // 5秒后自爆
 	} else {
-		LocalizedClientPrint(hSender, 3, TextColor(250, 250, 250) + "%s1", "#challenge_traitors_marine_silenced_notify");
+		if (hSender != null && hSender.IsValid()) {
+			LocalizedClientPrint(hSender, 3, TextColor(250, 250, 250) + "%s1", "#challenge_traitors_marine_silenced_notify");
+		}
 	}
 }
 
@@ -126,7 +196,6 @@ function BoomerSelfExplode() {
 	}
 	// 查找所有类名为 asw_marine 的实体
 	local hMarine = null
-	local ratio = 1.0;
 	local radius = 150;
 	local hAttacker = g_marine_Boomer;
 	local explosionPos = hAttacker.GetOrigin() + Vector(0, 0, 60);
@@ -137,6 +206,7 @@ function BoomerSelfExplode() {
 			local targetPos = hMarine.GetOrigin();
 			local hitCount = GetHitCount(explosionPos, targetPos);
 			if (hitCount < 110) {
+				local ratio = 1.0;
 				local distance = (targetPos - explosionPos).Length();
 				local maxHealth = hMarine.GetMaxHealth();
 				local currentHealth = hMarine.GetHealth();

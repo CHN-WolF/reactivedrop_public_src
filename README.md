@@ -30,8 +30,8 @@ There are two branches in this repository:
 
 ### How to compile the project ###
 
-* Download Visual Studio 2022 Community (https://visualstudio.microsoft.com/downloads/)
-* While installing Visual Studio 2022 select the 'Game development with C++' workload
+* Download Visual Studio 2026 Community (https://visualstudio.microsoft.com/downloads/)
+* While installing Visual Studio 2026 select the 'Game development with C++' workload
 * Open reactivedrop_vs13.sln using Visual Studio
 * Select configuration Debug or Release
 * Build
@@ -91,3 +91,11 @@ repository in these cases:
 If you are going to make a pull request, please keep them as granular as
 possible. Pull requests with 3-4 unrelated changes in them aren't going to
 be accepted.
+
+### AI USAGE ###
+
+We are not against AI-assisted development, but the human submitter remains fully responsible for every pull request.
+
+If you choose to use AI, you are expected to __review, understand, and test__ every generated line of code before opening a PR.
+
+PRs containing fabricated descriptions, untested changes, or code the author clearly does not understand will be closed without review. Submitting *vibe‑coded* or unverified AI output shifts the burden onto respository maintainers, and that is not acceptable.
