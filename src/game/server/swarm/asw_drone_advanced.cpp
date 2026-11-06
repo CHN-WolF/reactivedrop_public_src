@@ -84,6 +84,7 @@ ConVar asw_new_drone("asw_new_drone", "1", FCVAR_CHEAT, "Set to 1 to use the new
 ConVar rd_drone_uber_knockdown( "rd_drone_uber_knockdown", "0", FCVAR_CHEAT, "Set to 1 to make uber drones knock down marines like shieldbugs do" );
 ConVar rd_drone_uber_knockdown_force( "rd_drone_uber_knockdown_force", "10", FCVAR_CHEAT, "Magnitude of knockdown force for uber drone's melee attack, only works if rd_drone_uber_knockdown 1" );
 ConVar rd_drone_uber_knockdown_lift( "rd_drone_uber_knockdown_lift", "10", FCVAR_CHEAT, "Upwards force for uber drone's melee attack, only works if rd_drone_uber_knockdown 1" );
+ConVar rd_drone_client_side_animation( "rd_drone_client_side_animation", "1", FCVAR_NONE, "If 1, drones use client-side animation (cycle not networked). Pose params are already rebuilt clientside." );
 ConVar rd_pistols_uber_drone_additional_damage_health_percent("rd_pistols_uber_drone_additional_damage_health_percent", "12", FCVAR_CHEAT, "Special pistol bullets provide additional damage over heavy drones");
 ConVar rd_pistols_drone_dualshot_health_bound("rd_pistols_drone_dualshot_health_bound", "105", FCVAR_CHEAT, "Drones below this health guaranteed to die in two (or one) pistol shots");
 extern ConVar asw_debug_alien_damage;
@@ -219,8 +220,13 @@ void CASW_Drone_Advanced::Spawn( void )
 	//SetCollisionBounds(Vector(-26,-26,0), Vector(26,26,72));
 	UTIL_SetSize(this, Vector(-17,-17,0), Vector(17,17,69));
 
-	//UseClientSideAnimation();	
-	
+	// Pose params are already excluded from the send table and rebuilt clientside.
+	// Enabling CSA stops shipping m_flCycle every snapshot for the most common swarm unit.
+	if ( rd_drone_client_side_animation.GetBool() )
+	{
+		UseClientSideAnimation();
+	}
+
 	CapabilitiesAdd( bits_CAP_MOVE_CLIMB | bits_CAP_MOVE_GROUND | bits_CAP_INNATE_MELEE_ATTACK1 | bits_CAP_INNATE_MELEE_ATTACK2 );	// removed: bits_CAP_MOVE_JUMP
 	CapabilitiesAdd( bits_CAP_MOVE_SHOOT );
 

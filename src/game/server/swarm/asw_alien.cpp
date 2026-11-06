@@ -69,6 +69,11 @@ ConVar asw_springcol_radius( "asw_springcol_radius", "50.0", FCVAR_CHEAT, "Radiu
 ConVar asw_springcol_force_scale( "asw_springcol_force_scale", "3.0", FCVAR_CHEAT, "Multiplier for each individual push force" );
 ConVar asw_springcol_debug( "asw_springcol_debug", "0", FCVAR_CHEAT, "Display the direction of the pushaway vector. Set to entity index or -1 to show all." );
 ConVar rd_alien_instagib( "rd_alien_instagib", "0", FCVAR_NONE, "If 1 forces aliens to instantly gib upon death, without any fancy animations" );
+// Default 0.1 matches cl_alien_extra_interp / typical alien AI think rate. MOVETYPE_STEP
+// aliens otherwise dirtied by StepSimulation every server tick while chasing, which
+// drives net_graph "in" (bytes/snapshot) above ~2000 and causes lag with large packs.
+ConVar rd_alien_network_update_interval( "rd_alien_network_update_interval", "0.1", FCVAR_NONE,
+	"Seconds between allowed network state flushes for AI-controlled aliens. 0 disables throttling (legacy tick-rate updates). Player-inhabited aliens always update immediately." );
 
 float CASW_Alien::sm_flLastHurlTime = 0;
 
@@ -283,11 +288,27 @@ void CASW_Alien::Spawn()
 		SetMoveClone( m_iMoveCloneName, NULL );
 	}
 
+	ApplyNetworkUpdateThrottle();
+
 	IGameEvent * event = gameeventmanager->CreateEvent( "alien_spawn" );
 	if ( event )
 	{
 		event->SetInt( "entindex", entindex() );
 		gameeventmanager->FireEvent( event, true );
+	}
+}
+
+void CASW_Alien::ApplyNetworkUpdateThrottle()
+{
+	float flInterval = rd_alien_network_update_interval.GetFloat();
+	if ( IsInhabited() || flInterval <= 0.0f )
+	{
+		// 0 stops the timer so NetworkStateChanged flushes immediately (legacy behavior).
+		NetworkProp()->SetUpdateInterval( 0.0f );
+	}
+	else
+	{
+		NetworkProp()->SetUpdateInterval( flInterval );
 	}
 }
 
@@ -2006,6 +2027,10 @@ void CASW_Alien::Event_Killed( const CTakeDamageInfo &info )
 	if (asw_debug_alien_damage.GetBool())
 		Msg("%f alien killed\n", gpGlobals->curtime);
 
+	// Death / death-style must reach clients immediately even when update throttling is on.
+	NetworkProp()->SetUpdateInterval( 0.0f );
+	NetworkProp()->NetworkStateForceUpdate();
+
 	//bool bRagdollCreated = Dissolve( NULL, gpGlobals->curtime, false, ENTITY_DISSOLVE_ELECTRICAL );
 
 	//switch to the dead bodygroup if you are not on fire or electrocuted
@@ -2948,6 +2973,7 @@ void CASW_Alien::PhysicsSimulate()
 void CASW_Alien::InhabitedBy( CASW_Player *player )
 {
 	SetInhabited( true );
+	ApplyNetworkUpdateThrottle();
 
 	TaskFail( FAIL_NO_PLAYER );
 	MDLCACHE_CRITICAL_SECTION();
@@ -2971,6 +2997,7 @@ void CASW_Alien::InhabitedBy( CASW_Player *player )
 void CASW_Alien::UninhabitedBy( CASW_Player *player )
 {
 	SetInhabited( false );
+	ApplyNetworkUpdateThrottle();
 
 	TaskFail( FAIL_NO_PLAYER );
 	Assert( GetMoveType() == MOVETYPE_WALK );

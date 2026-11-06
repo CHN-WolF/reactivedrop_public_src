@@ -91,6 +91,7 @@ ConVar	sk_asw_buzzer_v2( "sk_asw_buzzer_v2","1", FCVAR_CHEAT, "");
 ConVar asw_buzzer_poison_duration("asw_buzzer_poison_duration", "0.6f", FCVAR_CHEAT, "Base buzzer poison blur duration. This scales up to double the value based on mission difficulty.");
 extern ConVar showhitlocation;
 extern ConVar asw_debug_alien_damage;
+extern ConVar rd_alien_network_update_interval;
 extern ConVar asw_alien_speed_scale_easy;
 extern ConVar asw_alien_speed_scale_normal;
 extern ConVar asw_alien_speed_scale_hard;
@@ -491,6 +492,9 @@ bool CASW_Buzzer::ShouldGib( const CTakeDamageInfo &info )
 
 void CASW_Buzzer::Event_Killed( const CTakeDamageInfo &info )
 {
+	NetworkProp()->SetUpdateInterval( 0.0f );
+	NetworkProp()->NetworkStateForceUpdate();
+
 	// turn off the blur!
 	SetBodygroup( ASW_BUZZER_BODYGROUP_BLUR, ASW_BUZZER_BODYGROUP_OFF );
 
@@ -2126,6 +2130,12 @@ void CASW_Buzzer::Spawn(void)
 
 	BaseClass::Spawn();
 	ChangeFaction( FACTION_ALIENS );
+
+	float flInterval = rd_alien_network_update_interval.GetFloat();
+	if ( flInterval > 0.0f )
+	{
+		NetworkProp()->SetUpdateInterval( flInterval );
+	}
 		 
 	AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL );
 	SetBloodColor( DONT_BLEED );
