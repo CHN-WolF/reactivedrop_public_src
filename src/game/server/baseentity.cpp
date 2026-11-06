@@ -7879,12 +7879,16 @@ void CBaseEntity::ComputeStepSimulationNetwork( StepSimulationData *step )
 				frac = clamp( frac, 0.0f, 1.0f );
 			}
 		
+			// Compute into a temp so we only dirty the network state when the
+			// interpolated origin actually moves. Calling NetworkStateChanged()
+			// every tick (even when frac is stuck at 1.0 between AI thinks) is a
+			// major source of inbound bandwidth with large alien packs.
+			Vector vecNewNetworkOrigin;
+
 			if (step->m_Previous2.nTickCount == 0 || step->m_Previous2.nTickCount >= step->m_Previous.nTickCount)
 			{
 				Vector delta = step->m_Next.vecOrigin - step->m_Previous.vecOrigin;
-				VectorMA( step->m_Previous.vecOrigin, frac, delta, step->m_vecNetworkOrigin );
-				// m_vecNetworkOrigin get network in place of m_vecOrigin in the SendProxy_Origin so it needs to mark the entities state as changed.
-				NetworkStateChanged();
+				VectorMA( step->m_Previous.vecOrigin, frac, delta, vecNewNetworkOrigin );
 			}
 			else if (!step_spline.GetBool())
 			{
@@ -7911,22 +7915,28 @@ void CBaseEntity::ComputeStepSimulationNetwork( StepSimulationData *step )
 				}
 		
 				Vector delta = pNewer->vecOrigin - pOlder->vecOrigin;
-				VectorMA( pOlder->vecOrigin, frac, delta, step->m_vecNetworkOrigin );
-				// m_vecNetworkOrigin get network in place of m_vecOrigin in the SendProxy_Origin so it needs to mark the entities state as changed.
-				NetworkStateChanged();
+				VectorMA( pOlder->vecOrigin, frac, delta, vecNewNetworkOrigin );
 			}
 			else
 			{
-				Hermite_Spline( step->m_Previous2.vecOrigin, step->m_Previous.vecOrigin, step->m_Next.vecOrigin, frac, step->m_vecNetworkOrigin );
-				// m_vecNetworkOrigin get network in place of m_vecOrigin in the SendProxy_Origin so it needs to mark the entities state as changed.
-				NetworkStateChanged();
+				Hermite_Spline( step->m_Previous2.vecOrigin, step->m_Previous.vecOrigin, step->m_Next.vecOrigin, frac, vecNewNetworkOrigin );
 			}
 
-			// Calculate the cell of this origin
-			register int const cellwidth = m_cellwidth; // Load it into a register
-			step->m_networkCell[0] = CellFromCoord( cellwidth, step->m_vecNetworkOrigin[0] );
-			step->m_networkCell[1] = CellFromCoord( cellwidth, step->m_vecNetworkOrigin[1] );
-			step->m_networkCell[2] = CellFromCoord( cellwidth, step->m_vecNetworkOrigin[2] );
+			// Match SPROP_CELL_COORD_LOWPRECISION (~1/8 unit) so micro-jitter
+			// within a single quantized coord does not force a snapshot update.
+			const float flOriginEpsilon = 0.125f;
+			if ( !VectorsAreEqual( vecNewNetworkOrigin, step->m_vecNetworkOrigin, flOriginEpsilon ) )
+			{
+				step->m_vecNetworkOrigin = vecNewNetworkOrigin;
+				// m_vecNetworkOrigin get network in place of m_vecOrigin in the SendProxy_Origin so it needs to mark the entities state as changed.
+				NetworkStateChanged();
+
+				// Calculate the cell of this origin
+				register int const cellwidth = m_cellwidth; // Load it into a register
+				step->m_networkCell[0] = CellFromCoord( cellwidth, step->m_vecNetworkOrigin[0] );
+				step->m_networkCell[1] = CellFromCoord( cellwidth, step->m_vecNetworkOrigin[1] );
+				step->m_networkCell[2] = CellFromCoord( cellwidth, step->m_vecNetworkOrigin[2] );
+			}
 		}
 	}
 

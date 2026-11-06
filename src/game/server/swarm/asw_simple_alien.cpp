@@ -49,6 +49,7 @@ extern ConVar asw_drone_gib_chance;
 extern ConVar ai_show_hull_attacks;
 extern ConVar sv_gravity;
 ConVar asw_debug_simple_alien( "asw_debug_simple_alien", "0", FCVAR_CHEAT, "Print debug text for simple aliens" );
+extern ConVar rd_alien_network_update_interval;
 extern int AE_DRONE_WALK_FOOTSTEP;
 extern int AE_DRONE_FOOTSTEP_SOFT;
 extern int AE_DRONE_FOOTSTEP_HEAVY;
@@ -113,6 +114,12 @@ void CASW_Simple_Alien::Spawn( void )
 	SetNextThink( gpGlobals->curtime + random->RandomFloat( 0.01f, 0.2f ) );
 
 	UpdateSleeping();
+
+	float flInterval = rd_alien_network_update_interval.GetFloat();
+	if ( flInterval > 0.0f )
+	{
+		NetworkProp()->SetUpdateInterval( flInterval );
+	}
 }
 
 void CASW_Simple_Alien::Precache()
@@ -1169,6 +1176,9 @@ Vector CASW_Simple_Alien::CalcDeathForceVector( const CTakeDamageInfo &info )
 
 void CASW_Simple_Alien::Event_Killed( const CTakeDamageInfo &info )
 {
+	NetworkProp()->SetUpdateInterval( 0.0f );
+	NetworkProp()->NetworkStateForceUpdate();
+
 	if ( ASWGameRules() )
 	{
 		ASWGameRules()->AlienKilled( this, info );
