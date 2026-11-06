@@ -219,7 +219,7 @@ void CASW_Drone_Advanced::Spawn( void )
 	//SetCollisionBounds(Vector(-26,-26,0), Vector(26,26,72));
 	UTIL_SetSize(this, Vector(-17,-17,0), Vector(17,17,69));
 
-	//UseClientSideAnimation();	
+	// Client-side animation is enabled in CASW_Alien::Spawn via rd_alien_clientside_animation.
 	
 	CapabilitiesAdd( bits_CAP_MOVE_CLIMB | bits_CAP_MOVE_GROUND | bits_CAP_INNATE_MELEE_ATTACK1 | bits_CAP_INNATE_MELEE_ATTACK2 );	// removed: bits_CAP_MOVE_JUMP
 	CapabilitiesAdd( bits_CAP_MOVE_SHOOT );

@@ -48,6 +48,7 @@ extern ConVar sk_asw_drone_damage;
 extern ConVar asw_drone_gib_chance;
 extern ConVar ai_show_hull_attacks;
 extern ConVar sv_gravity;
+extern ConVar rd_alien_clientside_animation;
 ConVar asw_debug_simple_alien( "asw_debug_simple_alien", "0", FCVAR_CHEAT, "Print debug text for simple aliens" );
 extern int AE_DRONE_WALK_FOOTSTEP;
 extern int AE_DRONE_FOOTSTEP_SOFT;
@@ -81,6 +82,11 @@ void CASW_Simple_Alien::Spawn( void )
 {
 	BaseClass::Spawn();
 	Precache();
+
+	if ( rd_alien_clientside_animation.GetBool() )
+	{
+		UseClientSideAnimation();
+	}
 
 	// appearance
 	SetModel( STRING( GetModelName() ) );

@@ -70,6 +70,13 @@ ConVar asw_springcol_force_scale( "asw_springcol_force_scale", "3.0", FCVAR_CHEA
 ConVar asw_springcol_debug( "asw_springcol_debug", "0", FCVAR_CHEAT, "Display the direction of the pushaway vector. Set to entity index or -1 to show all." );
 ConVar rd_alien_instagib( "rd_alien_instagib", "0", FCVAR_NONE, "If 1 forces aliens to instantly gib upon death, without any fancy animations" );
 
+// Network bandwidth mitigations for large alien packs (netgraph "in" spikes while chasing)
+ConVar rd_alien_clientside_animation( "rd_alien_clientside_animation", "1", FCVAR_NONE, "Advance alien animation cycles on the client so cycle/animtime are not streamed every tick" );
+ConVar rd_alien_network_lod( "rd_alien_network_lod", "1", FCVAR_NONE, "Throttle network state checks for awake aliens that are not near marines" );
+ConVar rd_alien_network_lod_interval( "rd_alien_network_lod_interval", "0.1", FCVAR_NONE, "Seconds between network state checks for far awake aliens (must be > 0 and well under engine autoupdate max)" );
+ConVar rd_alien_springcol_min_push( "rd_alien_springcol_min_push", "0.5", FCVAR_NONE, "Ignore soft-collision origin moves shorter than this (reduces origin churn bandwidth)" );
+ConVar rd_alien_springcol_throttle_awake( "rd_alien_springcol_throttle_awake", "20", FCVAR_NONE, "When awake aliens exceed this, only run soft collision every other think" );
+
 float CASW_Alien::sm_flLastHurlTime = 0;
 
 int ACT_MELEE_ATTACK1_HIT;
@@ -98,6 +105,12 @@ IMPLEMENT_SERVERCLASS_ST( CASW_Alien, DT_ASW_Alien )
 	SendPropAngle( SENDINFO_VECTORELEM( m_angRotation, 0 ), 10, SPROP_CHANGES_OFTEN, CBaseEntity::SendProxy_AnglesX ),
 	SendPropAngle( SENDINFO_VECTORELEM( m_angRotation, 1 ), 10, SPROP_CHANGES_OFTEN, CBaseEntity::SendProxy_AnglesY ),
 	SendPropAngle( SENDINFO_VECTORELEM( m_angRotation, 2 ), 10, SPROP_CHANGES_OFTEN, CBaseEntity::SendProxy_AnglesZ ),
+
+	// Aliens do not use facial flexes. MaintainLookTargets() rewrites m_viewtarget every
+	// think while chasing, which previously streamed a full-precision vector for every
+	// awake alien whenever marines moved — a major source of netgraph "in" spikes.
+	SendPropExclude( "DT_BaseFlex", "m_flexWeight" ),
+	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),
 
 	SendPropInt( SENDINFO( m_nDeathStyle ), CASW_Alien::kDEATHSTYLE_NUM_TRANSMIT_BITS, SPROP_UNSIGNED ),
 	SendPropFloat( SENDINFO( m_flAlienWalkSpeed ) ),
@@ -168,6 +181,8 @@ CASW_Alien::CASW_Alien( void ) :
 	m_bHoldoutAlien = false;
 
 	m_nAlienCollisionGroup = COLLISION_GROUP_NPC;
+	m_flNetworkUpdateInterval = -1.0f;
+	m_nSpringcolThinkCounter = 0;
 
 	meleeAttack1.Init( 0.0f, 64.0f, 0.7f, false );
 	meleeAttack2.Init( 0.0f, 64.0f, 0.7f, false );
@@ -214,6 +229,12 @@ void CASW_Alien::Spawn()
 
 	// Base spawn.
 	BaseClass::Spawn();
+
+	// Advance cycles clientside so m_flCycle / m_flAnimTime are not sent every tick.
+	if ( rd_alien_clientside_animation.GetBool() )
+	{
+		UseClientSideAnimation();
+	}
 
 	// By default NPCs are always solid and cannot be stood upon.
 	SetSolid( SOLID_BBOX );
@@ -494,6 +515,12 @@ void CASW_Alien::UpdateSleepState(bool bInPVS)
 			ASWSpawnManager()->OnAlienSleeping( this );
 			m_bRegisteredAsAwake = false;
 		}
+		// Sleeping aliens stop thinking; clear any LOD interval so wake-up starts at full rate.
+		if ( m_flNetworkUpdateInterval != 0.0f )
+		{
+			m_flNetworkUpdateInterval = 0.0f;
+			NetworkProp()->SetUpdateInterval( 0.0f );
+		}
 	}
 }
 
@@ -550,14 +577,43 @@ void CASW_Alien::NPCThink( void )
 
 	if ( asw_springcol.GetBool() && CanBePushedAway() )
 	{
-		PerformPushaway();
+		m_nSpringcolThinkCounter++;
+		const int nAwakeAliens = ASWSpawnManager()->GetAwakeAliens();
+		const int nThrottleAt = rd_alien_springcol_throttle_awake.GetInt();
+		const bool bThrottle = ( nThrottleAt > 0 && nAwakeAliens > nThrottleAt );
+		if ( !bThrottle || ( m_nSpringcolThinkCounter & 1 ) )
+		{
+			PerformPushaway();
+		}
 	}
+
+	UpdateAlienNetworkLOD();
 
 	// Update range attack
 	if ( m_nVolleyType >= 0 )
 		UpdateRangedAttack();
 
 	m_flLastThinkTime = gpGlobals->curtime;
+}
+
+void CASW_Alien::UpdateAlienNetworkLOD()
+{
+	float flDesiredInterval = 0.0f;
+
+	if ( rd_alien_network_lod.GetBool() && !IsInhabited() && GetSleepState() == AISS_AWAKE )
+	{
+		// Keep full-rate updates when marines can see us; throttle otherwise.
+		if ( !MarineCanSee( 384, 0.5f ) )
+		{
+			flDesiredInterval = MAX( rd_alien_network_lod_interval.GetFloat(), 0.05f );
+		}
+	}
+
+	if ( flDesiredInterval == m_flNetworkUpdateInterval )
+		return;
+
+	m_flNetworkUpdateInterval = flDesiredInterval;
+	NetworkProp()->SetUpdateInterval( flDesiredInterval );
 }
 
 CBaseEntity *CASW_Alien::CheckTraceHullAttack( float flDist, const Vector &mins, const Vector &maxs, float flDamage, int iDmgType, float forceScale, bool bDamageAnyNPC )
@@ -1378,6 +1434,13 @@ void CASW_Alien::PerformPushaway()
 {
 	VPROF("CASW_Alien::PerformPushaway");
 	SetupPushawayVector();
+
+	const float flMinPush = rd_alien_springcol_min_push.GetFloat();
+	if ( flMinPush > 0.0f && m_vecLastPush.LengthSqr() < ( flMinPush * flMinPush ) )
+	{
+		// Tiny soft-collision nudges still dirty networked origin; skip them.
+		return;
+	}
 
 #ifdef MOVEPROBE_PUSHAWAY
 	AIMoveTrace_t moveTrace;
