@@ -50,6 +50,8 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+extern ConVar rd_alien_clientside_animation;
+
 // When the engine is running and the buzzer is operating under power
 // we don't let gravity affect him.
 #define ASW_BUZZER_GRAVITY 0.000
@@ -190,6 +192,10 @@ END_DATADESC()
 LINK_ENTITY_TO_CLASS( asw_buzzer, CASW_Buzzer );
 
 IMPLEMENT_SERVERCLASS_ST(CASW_Buzzer, DT_ASW_Buzzer)
+	// Same bandwidth fix as CASW_Alien: chasing look-targets previously streamed m_viewtarget every think.
+	SendPropExclude( "DT_BaseFlex", "m_flexWeight" ),
+	SendPropExclude( "DT_BaseFlex", "m_viewtarget" ),
+
 	SendPropIntWithMinusOneFlag	(SENDINFO(m_nEnginePitch1), 8 ),
 	SendPropFloat(SENDINFO(m_flEnginePitch1Time), 0, SPROP_NOSCALE),	
 END_SEND_TABLE()
@@ -2126,6 +2132,12 @@ void CASW_Buzzer::Spawn(void)
 
 	BaseClass::Spawn();
 	ChangeFaction( FACTION_ALIENS );
+
+	// Match CASW_Alien: advance animation cycles clientside to cut chase-pack bandwidth.
+	if ( rd_alien_clientside_animation.GetBool() )
+	{
+		UseClientSideAnimation();
+	}
 		 
 	AddEFlags( EFL_NO_DISSOLVE | EFL_NO_MEGAPHYSCANNON_RAGDOLL );
 	SetBloodColor( DONT_BLEED );
